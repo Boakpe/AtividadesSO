@@ -1,6 +1,6 @@
-## Respostas - Sistemas Operacionais Modernos
+## Lista Avaliativa 1 - Respostas
 
-### 1) Sistema Operacional - Duas Visões
+#### 1)
 
 **Máquina Estendida:**
 O sistema operacional atua como uma camada de abstração sobre o hardware, ocultando sua complexidade e fornecendo uma interface mais simples e amigável. Ele transforma o hardware "bruto" em uma máquina virtual mais fácil de programar, oferecendo chamadas de sistema padronizadas para operações como leitura/escrita de arquivos, criação de processos e comunicação de rede, sem que o programador precise conhecer detalhes de baixo nível do hardware.
@@ -8,82 +8,34 @@ O sistema operacional atua como uma camada de abstração sobre o hardware, ocul
 **Gerenciador de Recursos:**
 O SO gerencia e coordena o uso dos recursos de hardware (CPU, memória, dispositivos de E/S, arquivos) entre múltiplos programas e usuários. Ele decide quem usa qual recurso, quando, por quanto tempo e resolve conflitos quando há competição por recursos. O objetivo é garantir uso eficiente, justo e seguro dos recursos do sistema.
 
-### 2) Modo Supervisor e Modo Usuário
+#### 2) 
 
-**Modo Usuário:**
-- Modo restrito onde processos de aplicação executam
-- Acesso limitado às instruções e recursos do sistema
-- Não pode executar instruções privilegiadas nem acessar diretamente hardware
+O processador opera em dois modos distintos para garantir a segurança e estabilidade do sistema. O modo usuário é um modo restrito onde os processos das aplicações executam com acesso limitado aos recursos do sistema. Neste modo, os programas não podem executar instruções privilegiadas nem acessar diretamente o hardware, o que impede que aplicações maliciosas ou com erros comprometam todo o sistema.
 
-**Modo Supervisor (Kernel):**
-- Modo privilegiado com acesso total ao hardware
-- Pode executar qualquer instrução e acessar qualquer endereço de memória
-- Sistema operacional executa neste modo
+Já o modo supervisor, também chamado de modo kernel, é um modo privilegiado que possui acesso total ao hardware e pode executar qualquer instrução da CPU, além de acessar qualquer região da memória. É neste modo que o sistema operacional executa suas operações críticas, gerenciando recursos e coordenando o funcionamento de todo o computador.
 
-**Momentos de Troca:**
-- **Usuário → Supervisor:** Chamadas de sistema, interrupções de hardware, exceções (erros)
-- **Supervisor → Usuário:** Retorno de chamadas de sistema, retorno de tratamento de interrupções
+A troca entre esses modos acontece em momentos específicos durante a operação do sistema. Quando um programa em modo usuário precisa realizar uma operação que requer privilégios, como acessar um arquivo ou alocar memória, ele faz uma chamada de sistema que transfere a execução para o modo supervisor. Além disso, quando ocorrem interrupções de hardware, como o acionamento de um dispositivo de entrada e saída, ou exceções causadas por erros no programa o processador alterna automaticamente para o modo supervisor para tratar essas situações. Após concluir o tratamento da chamada de sistema ou da interrupção, o processador retorna ao modo usuário, permitindo que o programa continue sua execução normal. 
 
-### 3) Sistema de Proteção de Arquivos (9 bits)
+#### 3) 
 
-Sistema usado em Unix/Linux onde cada arquivo possui 9 bits de permissão organizados em três grupos:
+O sistema de proteção de arquivos no UNIX utiliza um código de 9 bits para definir as permissões de acesso de cada arquivo. Esses 9 bits são divididos em três grupos de 3 bits, que representam as permissões do proprietário do arquivo, do grupo ao qual ele pertence e de outros usuários.
 
-**Estrutura (rwx rwx rwx):**
-- **Primeiros 3 bits:** Permissões do proprietário (owner)
-- **Segundos 3 bits:** Permissões do grupo (group)
-- **Últimos 3 bits:** Permissões para outros usuários (others)
+Cada grupo de 3 bits indica se há permissão de leitura (r), escrita (w) e execução (x). Por exemplo, o código `rwxr-x--x` significa que o proprietário pode ler, escrever e executar o arquivo; os usuários do mesmo grupo podem ler e executar, mas não escrever; e os demais usuários podem apenas executar. Assim, esse sistema permite controlar de forma simples e eficiente quem pode acessar e modificar os arquivos no sistema.
 
-**Cada conjunto de 3 bits representa:**
-- **r (read):** Permissão de leitura
-- **w (write):** Permissão de escrita
-- **x (execute):** Permissão de execução
 
-Exemplo: `rwxr-xr--` = proprietário tem acesso total, grupo pode ler e executar, outros só podem ler.
 
-### 4) Processo
+#### 4) 
 
-**Definição:**
-Um processo é um programa em execução, incluindo o código do programa, seus dados, pilha, registradores, contador de programa e todas as informações necessárias para executar o programa.
+Um processo é a abstração de um programa em execução, representando uma instância ativa que possui seus próprios recursos, como código, dados e estado de execução. Quando um processo não está em execução (ou seja, está suspenso ou bloqueado), suas informações são armazenadas em uma estrutura de dados mantida pelo sistema operacional chamada tabela de processos. Cada entrada nesta tabela armazena todo o contexto necessário para que o processo possa ser retomado posteriormente, incluindo o valor dos registradores da CPU (como o contador de programa), seu estado atual (pronto, bloqueado), prioridade e informações sobre os recursos que ele utiliza, como arquivos abertos e memória alocada.
 
-**Armazenamento quando não está em execução:**
-As informações são armazenadas no **Bloco de Controle do Processo (PCB - Process Control Block)**, que contém:
-- Estado dos registradores
-- Contador de programa
-- Ponteiros de pilha
-- Estado do processo
-- Informações de gerenciamento de memória
-- Informações de E/S
-- Prioridade e estatísticas
+#### 5) 
 
-O PCB fica na memória do kernel, permitindo que o SO restaure completamente o contexto do processo quando ele voltar a executar.
+O espaço de endereçamento é o conjunto de endereços de memória lógicos que um processo pode referenciar. Ele define uma visão privada e isolada da memória para cada processo, geralmente iniciando no endereço 0 e indo até um valor máximo. Este espaço contém o código do programa, seus dados (variáveis globais) e a pilha de execução (variáveis locais e chamadas de função), garantindo que um processo não possa acessar diretamente a memória de outro.
 
-### 5) Espaço de Endereçamento e Memória Virtual
+A memória virtual é um mecanismo que desacopla o espaço de endereçamento lógico de um processo da memória física (RAM) do computador. Essa técnica permite que o sistema operacional mantenha apenas as partes ativamente utilizadas de um processo na RAM, enquanto o restante é armazenado em disco. Isso cria a ilusão de que o sistema possui muito mais memória do que a fisicamente disponível, possibilitando a execução de programas maiores que a RAM e aumentando o grau de multiprogramação do sistema.
 
-**Espaço de Endereçamento:**
-Conjunto de endereços de memória que um processo pode usar. É uma abstração que dá a cada processo a ilusão de ter toda a memória disponível só para si, tipicamente indo de 0 até um valor máximo determinado pela arquitetura.
+#### 6) 
 
-**Memória Virtual:**
-Técnica que permite:
-- Usar mais memória do que a RAM física disponível
-- Cada processo ter seu próprio espaço de endereçamento isolado
-- Páginas de memória podem estar na RAM ou em disco (swap)
-- Sistema usa tabelas de páginas para mapear endereços virtuais em endereços físicos
-- Implementa proteção de memória entre processos
-- Permite compartilhamento controlado de memória
+A estrutura de micronúcleo organiza o sistema operacional de forma a minimizar a quantidade de código que executa em modo supervisor (núcleo). A ideia principal é mover a maior parte dos serviços tradicionalmente encontrados no núcleo, como sistemas de arquivos, drivers de dispositivos e gerenciadores de rede, para o espaço do usuário, onde eles executam como processos servidores.
 
-### 6) Micronúcleo (Microkernel)
-
-**Estrutura:**
-Arquitetura onde o kernel contém apenas funcionalidades mínimas essenciais:
-- Gerenciamento básico de processos e threads
-- Comunicação entre processos (IPC)
-- Gerenciamento básico de memória
-- Escalonamento de baixo nível
-
-**Características:**
-- Serviços tradicionais do kernel (drivers, sistemas de arquivos, rede) executam como **processos em modo usuário**
-- Comunicação entre componentes via **passagem de mensagens**
-- Kernel menor e mais simples
-- **Vantagens:** Maior modularidade, confiabilidade, segurança, facilidade de manutenção
-- **Desvantagens:** Overhead de comunicação pode impactar desempenho
-- **Exemplos:** Minix, QNX, L4
+Dessa forma, o núcleo se torna mínimo, sendo responsável apenas pelas funções mais essenciais, como a comunicação entre processos (IPC), o escalonamento básico de threads e o gerenciamento de baixo nível da memória. Essa abordagem aumenta a robustez e a segurança do sistema, pois uma falha em um serviço (como um driver) executando em modo usuário não compromete todo o sistema operacional, como ocorreria em uma arquitetura monolítica.
