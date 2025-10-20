@@ -1,90 +1,62 @@
-## Respostas - Lista Avaliativa 2
+## Lista Avaliativa 2 - Respostas
 
-### 1) Transição de Bloqueado para Executando
+#### 1) 
 
-Um processo **não pode** passar diretamente do estado bloqueado para o estado executando. A transição correta é:
+Um processo não pode passar diretamente do estado bloqueado para o estado de execução. A transição ocorre em duas etapas. Primeiro, o processo precisa sair do estado bloqueado e ir para o estado pronto. Isso acontece quando o evento externo pelo qual ele estava esperando finalmente ocorre. Por exemplo, a conclusão de uma operação de entrada/saída, a chegada de dados de um dispositivo ou a liberação de um recurso que estava sendo aguardado.
 
-**Bloqueado → Pronto → Executando**
+Uma vez no estado pronto, o processo está apto a executar, mas ainda aguarda a sua vez de usar a CPU. A segunda etapa ocorre quando o escalonador do sistema operacional seleciona este processo, dentre todos os que estão no estado pronto, para ser o próximo a receber o tempo de CPU. Somente após ser escolhido pelo escalonador é que o processo finalmente passa para o estado de execução.
 
-**Condições necessárias:**
-1. O evento pelo qual o processo estava esperando deve ocorrer (E/S completada, recurso disponibilizado, mensagem recebida, etc.)
-2. O processo passa para o estado **Pronto** (ready)
-3. O escalonador deve selecioná-lo para execução entre os processos prontos
-4. Então o processo passa para **Executando** (running)
+#### 2) 
 
-### 2) Informações na Tabela de Processos (PCB)
+A entrada de um processo na tabela de processos armazena todo o estado e contexto necessários para que o sistema operacional possa gerenciar o processo e restaurar sua execução após uma interrupção ou suspensão. As principais informações, e seus motivos, são:
 
-**Principais informações armazenadas:**
+*   **Gerenciamento do Processo:**
+    *   **Registradores e Contador de Programa:** Armazenam o conteúdo dos registradores da CPU no momento da interrupção. O motivo é permitir que o processo continue sua execução exatamente do ponto onde parou, como se nada tivesse acontecido.
+    *   **Estado do Processo:** Indica se o processo está em execução, pronto ou bloqueado. Essa informação é crucial para que o escalonador saiba quais processos estão aptos a receber tempo de CPU.
+    *   **Prioridade e Parâmetros de Escalonamento:** Utilizados pelo algoritmo de escalonamento para decidir qual processo deve ser executado em seguida.
 
-- **Estado dos registradores:** Necessário para restaurar o contexto do processo quando ele voltar a executar
-- **Contador de programa (PC):** Indica qual instrução será executada a seguir
-- **Ponteiro da pilha:** Localização do topo da pilha do processo
-- **Estado do processo:** Executando, Pronto, Bloqueado, etc.
-- **PID:** Identificador único do processo
-- **PPID:** PID do processo pai
-- **Prioridade:** Usado pelo escalonador
-- **Informações de memória:** Tabela de páginas, segmentos, limites de memória
-- **Recursos alocados:** Arquivos abertos, dispositivos, semáforos
-- **Tempo de CPU:** Estatísticas de uso
-- **Informações de escalonamento:** Quantum restante, fila a que pertence
+*   **Gerenciamento de Memória:**
+    *   **Ponteiros para os Segmentos de Memória:** Apontam para as áreas de memória que contêm o código, os dados e a pilha do processo. O motivo é permitir que o sistema localize e gerencie o espaço de endereçamento do processo.
 
-### 3) Diferença entre Processos e Threads
+*   **Gerenciamento de Arquivos:**
+    *   **Descritores de Arquivo e Diretórios:** Mantêm informações sobre os arquivos que o processo abriu e seu diretório de trabalho atual. Isso é necessário para gerenciar os recursos de E/S que o processo está utilizando e controlar o acesso a eles.
 
-**Processo:**
-- Unidade de alocação de recursos
-- Possui espaço de endereçamento próprio e isolado
-- Criação e troca de contexto são operações pesadas
+#### 3) 
 
-**Thread:**
-- Unidade de execução dentro de um processo
-- Compartilha recursos do processo
-- Criação e troca de contexto são mais leves
+A diferença fundamental entre processos e threads está na forma como agrupam recursos e executam tarefas. Um processo é uma unidade de alocação de recursos, funcionando como um contêiner que agrupa um conjunto de recursos relacionados. Por outro lado, uma thread é a unidade de execução, representando um fluxo de controle que executa o código dentro do ambiente de um processo.
 
-**Únicos por processo:**
-- Espaço de endereçamento (memória)
-- Variáveis globais
-- Arquivos abertos
-- Processos filhos
-- Sinais e tratadores
-- Informações de contabilidade
+Os itens que são únicos por processo e, portanto, compartilhados por todas as threads dentro dele, são:
+*   **Espaço de endereçamento:** Todas as threads compartilham a mesma visão da memória, incluindo o código e as variáveis globais.
+*   **Arquivos abertos:** Se uma thread abre um arquivo, as outras threads do mesmo processo podem acessá-lo.
+*   **Processos filhos e alarmes:** Recursos como estes pertencem ao processo como um todo.
 
-**Únicos por thread:**
-- Contador de programa (PC)
-- Registradores
-- Pilha (stack)
-- Estado da thread
-- Variáveis locais
+Os itens que são únicos por thread, representando seu contexto de execução individual, são:
+*   **Contador de Programa (PC):** Indica qual instrução a thread está executando.
+*   **Registradores:** Armazenam as variáveis de trabalho atuais da thread.
+*   **Pilha de Execução (Stack):** Contém o histórico de chamadas de função e as variáveis locais de cada thread.
+*   **Estado:** Cada thread possui seu próprio estado (execução, pronto ou bloqueado).
 
-### 4) Implementação de Threads: Kernel vs Espaço de Usuário
+#### 4) 
 
-**Threads em Espaço de Usuário:**
+**Threads no Espaço do Usuário:**
+Neste modelo, as threads são implementadas por uma biblioteca de tempo de execução no espaço de usuário, e o kernel do sistema operacional não tem conhecimento de sua existência. Para o kernel, o processo inteiro é uma única thread de execução.
 
-*Características:*
-- Implementadas por biblioteca (sem suporte do kernel)
-- Kernel enxerga apenas um processo
+*   **Vantagens:**
+    *   **Rapidez:** A criação, destruição e o chaveamento de contexto entre threads são extremamente rápidos, pois não exigem uma chamada de sistema para o núcleo.
+    *   **Portabilidade:** Um pacote de threads de usuário pode ser implementado em qualquer sistema operacional, mesmo naqueles que não oferecem suporte nativo a threads.
+    *   **Customização:** Cada processo pode ter seu próprio algoritmo de escalonamento de threads, customizado para sua aplicação.
 
-*Vantagens:*
-- Troca de contexto muito rápida (sem chamada de sistema)
-- Podem ser implementadas em qualquer SO
-- Cada processo pode ter seu próprio algoritmo de escalonamento
-
-*Desvantagens:*
-- Se uma thread bloqueia em E/S, todo o processo bloqueia
-- Não aproveita múltiplos cores
-- Necessita polling para evitar bloqueio completo
+*   **Desvantagens:**
+    *   **Bloqueio do Processo:** Se uma thread realiza uma chamada de sistema bloqueante (ex: leitura de disco), o processo inteiro é bloqueado pelo kernel, impedindo que outras threads do mesmo processo executem.
+    *   **Falta de Paralelismo Real:** Como o kernel enxerga apenas uma thread por processo, ele não pode escalonar as threads do mesmo processo para executar em múltiplos núcleos de CPU simultaneamente.
 
 **Threads no Kernel:**
+Neste modelo, o kernel do sistema operacional é responsável por gerenciar todas as threads. Ele mantém uma tabela de threads para todo o sistema e realiza o escalonamento no nível do kernel.
 
-*Características:*
-- Kernel gerencia e escalona as threads
-- Cada thread tem seu próprio TCB no kernel
+*   **Vantagens:**
+    *   **Não Bloqueio do Processo:** Se uma thread realiza uma chamada de sistema bloqueante, o kernel pode escalonar outra thread do mesmo processo para executar.
+    *   **Paralelismo Real:** O kernel pode escalonar diferentes threads de um mesmo processo para executar simultaneamente em diferentes núcleos de CPU, permitindo paralelismo verdadeiro.
 
-*Vantagens:*
-- Quando uma thread bloqueia, outras podem continuar executando
-- Aproveita múltiplos cores (paralelismo real)
-- Melhor integração com o SO
-
-**Desvantagens:**
-- Troca de contexto mais lenta (envolve o kernel)
-- Criação e destruição mais custosas
-- Overhead no kernel
+*   **Desvantagens:**
+    *   **Lentidão:** A criação, destruição e o chaveamento de contexto são consideravelmente mais lentos, pois cada operação exige uma chamada de sistema e uma mudança de modo (usuário para núcleo).
+    *   **Maior Sobrecarga:** As estruturas de dados para gerenciar cada thread são mantidas no núcleo, o que consome mais recursos do sistema.
