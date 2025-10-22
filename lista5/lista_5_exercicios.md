@@ -154,3 +154,162 @@ O TLB armazena as traduções de endereço (página virtual para quadro de pági
 *   Quando uma tradução é necessária, o hardware primeiro verifica o TLB.
 *   Se a tradução estiver no TLB (TLB Hit): O endereço do quadro físico é obtido instantaneamente, sem a necessidade de consultar as tabelas na memória.
 *   Se não estiver no TLB (TLB Miss): O hardware executa o processo completo de 4 passos descrito acima, e o resultado da tradução é então armazenado no TLB para acelerar acessos futuros à mesma página.
+
+#### 6)
+```c
+#define _GNU_SOURCE
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sched.h>
+#include <string.h>
+#include <errno.h>
+#include <time.h>
+
+typedef struct
+{
+    int thread_id;
+    int *vector;
+    int vector_size;
+    int num_cores;
+} thread_args_t;
+
+// Função de comparação para o qsort
+int compare_integers(const void *a, const void *b)
+{
+    return (*(int *)a - *(int *)b);
+}
+
+void *sort_thread_function(void *args)
+{
+    thread_args_t *thread_data = (thread_args_t *)args;
+
+    // 1. DEFINe A AFINIDADE DA THREAD
+
+    // Calcula em qual core esta thread deve ser executada.
+    int core_id = thread_data->thread_id % thread_data->num_cores;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_id, &cpuset);
+
+    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) == -1)
+    {
+        fprintf(stderr, "Erro ao definir a afinidade da thread %d para o core %d: %s\n",
+                thread_data->thread_id, core_id, strerror(errno));
+        pthread_exit(NULL);
+    }
+
+    printf("Thread %d foi definida para executar no Core %d.\n", thread_data->thread_id, core_id);
+
+    // 2. VERIFICA A AFINIDADE
+
+    cpu_set_t affinity_mask;
+    CPU_ZERO(&affinity_mask);
+
+    if (sched_getaffinity(0, sizeof(cpu_set_t), &affinity_mask) == -1)
+    {
+        fprintf(stderr, "Erro ao verificar a afinidade da thread %d: %s\n",
+                thread_data->thread_id, strerror(errno));
+    }
+    else
+    {
+        if (CPU_ISSET(core_id, &affinity_mask))
+        {
+            printf("VERIFICAÇÃO: Thread %d confirmada no Core %d.\n", thread_data->thread_id, core_id);
+        }
+        else
+        {
+            printf("VERIFICAÇÃO FALHOU: Thread %d não está no Core %d.\n", thread_data->thread_id, core_id);
+        }
+    }
+
+    // 3. EXECUTA A ORDENAÇÃO
+
+    printf("Thread %d iniciando a ordenação do vetor de %d elementos.\n",
+           thread_data->thread_id, thread_data->vector_size);
+
+    qsort(thread_data->vector, thread_data->vector_size, sizeof(int), compare_integers);
+
+    printf("Thread %d terminou a ordenação.\n", thread_data->thread_id);
+
+    pthread_exit(NULL);
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "Uso: %s <tamanho_do_vetor>\n", argv[0]);
+        return 1;
+    }
+
+    int n = atoi(argv[1]);
+    if (n <= 0)
+    {
+        fprintf(stderr, "O tamanho do vetor deve ser um número positivo.\n");
+        return 1;
+    }
+
+    const int NUM_THREADS = 4;
+    int *vectors[NUM_THREADS];
+    pthread_t threads[NUM_THREADS];
+    thread_args_t thread_args[NUM_THREADS];
+
+    // Obtém o número de cores
+    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (num_cores < 1)
+    {
+        fprintf(stderr, "Não foi possível determinar o número de cores.\n");
+        return 1;
+    }
+    printf("Sistema detectado com %d cores.\n\n", num_cores);
+
+    srand(time(NULL));
+
+    // Aloca e preenche os 4 vetores com números aleatórios
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        vectors[i] = (int *)malloc(n * sizeof(int));
+        if (vectors[i] == NULL)
+        {
+            perror("Falha ao alocar memória para o vetor");
+            return 1;
+        }
+        for (int j = 0; j < n; j++)
+        {
+            vectors[i][j] = rand() % 10000; // Números entre 0 e 9999
+        }
+    }
+
+
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        thread_args[i].thread_id = i;
+        thread_args[i].vector = vectors[i];
+        thread_args[i].vector_size = n;
+        thread_args[i].num_cores = num_cores;
+
+        if (pthread_create(&threads[i], NULL, sort_thread_function, &thread_args[i]) != 0)
+        {
+            perror("Falha ao criar a thread");
+            return 1;
+        }
+    }
+
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        free(vectors[i]);
+    }
+
+    printf("\nTodos os vetores foram ordenados. Programa finalizado.\n");
+
+    return 0;
+}
+```
