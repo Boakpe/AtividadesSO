@@ -2,325 +2,230 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <semaphore.h>
-#include <time.h>
-#include <signal.h>
 #include <pthread.h>
 
-#define MAX_USERS 10
-#define MAX_MESSAGES 100
-#define MAX_NAME_LEN 32
-#define MAX_MSG_LEN 256
-#define SHM_NAME "/chat_shm"
-#define SEM_MUTEX "/chat_mutex"
-#define SEM_MSG "/chat_msg_sem"
+// ============= CONFIGURAÇÕES =============
+#define MAX_MSGS 100          // Máximo de mensagens armazenadas
+#define MAX_MSG_LEN 256       // Tamanho máximo de cada mensagem
+#define MAX_USER_LEN 32       // Tamanho máximo do nome de usuário
+#define SHM_NAME "/chat_shm"  // Nome da memória compartilhada
+#define SEM_NAME "/chat_sem"  // Nome do semáforo
 
+// ============= ESTRUTURAS =============
+
+// Estrutura que representa uma mensagem individual
 typedef struct {
-    char username[MAX_NAME_LEN];
-    char text[MAX_MSG_LEN];
-    time_t timestamp;
-    int active;
-} Message;
+    char usuario[MAX_USER_LEN];  // Nome de quem enviou
+    char texto[MAX_MSG_LEN];     // Conteúdo da mensagem
+    int id;                       // ID único da mensagem
+} Mensagem;
 
+// Estrutura da memória compartilhada entre todos os processos
 typedef struct {
-    char name[MAX_NAME_LEN];
-    pid_t pid;
-    int active;
-} User;
+    Mensagem mensagens[MAX_MSGS];  // Array circular de mensagens
+    int total_msgs;                 // Contador total de mensagens enviadas
+} ChatMemoria;
 
-typedef struct {
-    User users[MAX_USERS];
-    Message messages[MAX_MESSAGES];
-    int msg_count;
-    int user_count;
-} ChatRoom;
+// ============= VARIÁVEIS GLOBAIS =============
+ChatMemoria *chat_mem = NULL;     // Ponteiro para memória compartilhada
+sem_t *sem = NULL;                // Ponteiro para o semáforo
+char meu_usuario[MAX_USER_LEN];   // Nome do usuário atual
+int ultima_msg_lida = 0;          // Controle de mensagens já exibidas
+int rodando = 1;                  // Flag para controlar threads
 
-// Variáveis globais
-ChatRoom *chat_room = NULL;
-sem_t *sem_mutex = NULL;
-sem_t *sem_msg = NULL;
-int shm_fd = -1;
-char my_username[MAX_NAME_LEN];
-int my_user_index = -1;
-volatile int running = 1;
+// ============= FUNÇÕES =============
 
-// Protótipos
-void cleanup();
-void signal_handler(int sig);
-void *message_listener(void *arg);
-void display_messages(int last_count);
-int add_user(const char *username);
-void remove_user();
-void send_message(const char *text);
-
-// Função de limpeza
-void cleanup() {
-    if (my_user_index >= 0 && chat_room != NULL) {
-        sem_wait(sem_mutex);
-        chat_room->users[my_user_index].active = 0;
-        sem_post(sem_mutex);
-    }
-    
-    if (chat_room != NULL) {
-        munmap(chat_room, sizeof(ChatRoom));
-    }
-    
-    if (sem_mutex != NULL) {
-        sem_close(sem_mutex);
-    }
-    
-    if (sem_msg != NULL) {
-        sem_close(sem_msg);
-    }
-}
-
-// Handler de sinais
-void signal_handler(int sig) {
-    running = 0;
-    printf("\n\nSaindo do chat...\n");
-}
-
-// Thread que escuta novas mensagens
-void *message_listener(void *arg) {
-    int last_msg_count = 0;
-    
-    while (running) {
-        sem_wait(sem_mutex);
-        int current_count = chat_room->msg_count;
-        sem_post(sem_mutex);
+/**
+ * Thread responsável por monitorar e exibir novas mensagens
+ * Fica em loop verificando se há mensagens novas na memória compartilhada
+ */
+void *monitorar_mensagens(void *arg) {
+    while (rodando) {
+        // ENTRA NA REGIÃO CRÍTICA (protegida pelo semáforo)
+        sem_wait(sem);
         
-        if (current_count > last_msg_count) {
-            display_messages(last_msg_count);
-            last_msg_count = current_count;
-            printf("\n[Você (%s)]: ", my_username);
-            fflush(stdout);
+        // Verifica se o total de mensagens aumentou
+        if (chat_mem->total_msgs > ultima_msg_lida) {
+            // Imprime todas as mensagens novas
+            for (int i = ultima_msg_lida; i < chat_mem->total_msgs; i++) {
+                // Usa módulo para implementar buffer circular
+                int idx = i % MAX_MSGS;
+                Mensagem *msg = &chat_mem->mensagens[idx];
+                
+                // Exibe a mensagem
+                printf("\n[%s]: %s\n> ", msg->usuario, msg->texto);
+                fflush(stdout);  // Força a exibição imediata
+            }
+            
+            // Atualiza o controle de mensagens lidas
+            ultima_msg_lida = chat_mem->total_msgs;
         }
         
-        usleep(100000); // 100ms
+        // SAI DA REGIÃO CRÍTICA
+        sem_post(sem);
+        
+        // Pequena pausa para não sobrecarregar CPU
+        usleep(100000);  // 100 milissegundos
     }
-    
     return NULL;
 }
 
-// Exibe mensagens novas
-void display_messages(int last_count) {
-    sem_wait(sem_mutex);
+/**
+ * Envia uma mensagem para a memória compartilhada
+ */
+void enviar_mensagem(const char *texto) {
+    // ENTRA NA REGIÃO CRÍTICA
+    sem_wait(sem);
     
-    for (int i = last_count; i < chat_room->msg_count; i++) {
-        Message *msg = &chat_room->messages[i];
-        if (msg->active) {
-            struct tm *tm_info = localtime(&msg->timestamp);
-            char time_str[20];
-            strftime(time_str, sizeof(time_str), "%H:%M:%S", tm_info);
-            
-            printf("\n[%s] %s: %s", time_str, msg->username, msg->text);
-        }
-    }
+    // Calcula posição no array circular
+    int idx = chat_mem->total_msgs % MAX_MSGS;
     
-    sem_post(sem_mutex);
+    // Preenche a estrutura da mensagem
+    strncpy(chat_mem->mensagens[idx].usuario, meu_usuario, MAX_USER_LEN - 1);
+    strncpy(chat_mem->mensagens[idx].texto, texto, MAX_MSG_LEN - 1);
+    chat_mem->mensagens[idx].id = chat_mem->total_msgs;
+    
+    // Incrementa contador global de mensagens
+    chat_mem->total_msgs++;
+    
+    // SAI DA REGIÃO CRÍTICA
+    sem_post(sem);
 }
 
-// Adiciona usuário ao chat
-int add_user(const char *username) {
-    sem_wait(sem_mutex);
-    
-    int index = -1;
-    for (int i = 0; i < MAX_USERS; i++) {
-        if (!chat_room->users[i].active) {
-            strncpy(chat_room->users[i].name, username, MAX_NAME_LEN - 1);
-            chat_room->users[i].pid = getpid();
-            chat_room->users[i].active = 1;
-            index = i;
-            chat_room->user_count++;
-            break;
-        }
-    }
-    
-    sem_post(sem_mutex);
-    return index;
-}
-
-// Remove usuário do chat
-void remove_user() {
-    if (my_user_index < 0) return;
-    
-    sem_wait(sem_mutex);
-    chat_room->users[my_user_index].active = 0;
-    chat_room->user_count--;
-    sem_post(sem_mutex);
-}
-
-// Envia mensagem
-void send_message(const char *text) {
-    sem_wait(sem_mutex);
-    
-    int index = chat_room->msg_count % MAX_MESSAGES;
-    Message *msg = &chat_room->messages[index];
-    
-    strncpy(msg->username, my_username, MAX_NAME_LEN - 1);
-    strncpy(msg->text, text, MAX_MSG_LEN - 1);
-    msg->timestamp = time(NULL);
-    msg->active = 1;
-    
-    chat_room->msg_count++;
-    
-    sem_post(sem_mutex);
-    sem_post(sem_msg);
-}
-
-// Lista usuários online
-void list_users() {
-    sem_wait(sem_mutex);
-    
-    printf("\n=== Usuários Online (%d) ===\n", chat_room->user_count);
-    for (int i = 0; i < MAX_USERS; i++) {
-        if (chat_room->users[i].active) {
-            printf("  - %s (PID: %d)\n", 
-                   chat_room->users[i].name, 
-                   chat_room->users[i].pid);
-        }
-    }
-    printf("========================\n");
-    
-    sem_post(sem_mutex);
-}
-
-int main(int argc, char *argv[]) {
-    pthread_t listener_thread;
-    char input[MAX_MSG_LEN];
-    int is_first = 0;
-    
-    // Configurar handlers de sinal
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-    
-    // Solicitar nome de usuário
-    printf("Digite seu nome de usuário: ");
-    fgets(my_username, MAX_NAME_LEN, stdin);
-    my_username[strcspn(my_username, "\n")] = 0;
-    
-    if (strlen(my_username) == 0) {
-        fprintf(stderr, "Nome de usuário inválido!\n");
-        return 1;
-    }
-    
-    // Criar/abrir memória compartilhada
-    shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+/**
+ * Inicializa a memória compartilhada e o semáforo
+ */
+void inicializar_chat() {
+    // PASSO 1: Criar/abrir memória compartilhada
+    int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1) {
-        perror("shm_open");
+        perror("Erro ao criar memória compartilhada");
+        exit(1);
+    }
+    
+    // PASSO 2: Definir tamanho da memória compartilhada
+    if (ftruncate(shm_fd, sizeof(ChatMemoria)) == -1) {
+        perror("Erro ao dimensionar memória compartilhada");
+        exit(1);
+    }
+    
+    // PASSO 3: Mapear a memória compartilhada no espaço de endereçamento
+    chat_mem = mmap(NULL, sizeof(ChatMemoria), 
+                    PROT_READ | PROT_WRITE,  // Permissões de leitura/escrita
+                    MAP_SHARED,              // Compartilhado entre processos
+                    shm_fd, 0);
+    
+    if (chat_mem == MAP_FAILED) {
+        perror("Erro ao mapear memória compartilhada");
+        exit(1);
+    }
+    
+    // PASSO 4: Criar/abrir semáforo nomeado
+    // O valor inicial 1 indica que é um mutex (semáforo binário)
+    sem = sem_open(SEM_NAME, O_CREAT, 0666, 1);
+    if (sem == SEM_FAILED) {
+        perror("Erro ao criar semáforo");
+        exit(1);
+    }
+    
+    // Não precisamos mais do file descriptor
+    close(shm_fd);
+}
+
+/**
+ * Libera recursos antes de encerrar o programa
+ */
+void limpar_chat() {
+    // Desmapeia a memória compartilhada
+    if (chat_mem != NULL) {
+        munmap(chat_mem, sizeof(ChatMemoria));
+    }
+    
+    // Fecha o semáforo
+    if (sem != NULL) {
+        sem_close(sem);
+    }
+}
+
+/**
+ * Função principal
+ */
+int main() {
+    char buffer[MAX_MSG_LEN];
+    pthread_t thread_monitor;
+    
+    // INTERFACE INICIAL
+    printf("╔════════════════════════════════════════╗\n");
+    printf("║  CHAT COM MEMÓRIA COMPARTILHADA       ║\n");
+    printf("╚════════════════════════════════════════╝\n\n");
+    
+    // Solicita nome do usuário
+    printf("Digite seu nome de usuário: ");
+    if (fgets(meu_usuario, MAX_USER_LEN, stdin) == NULL) {
+        fprintf(stderr, "Erro ao ler nome de usuário\n");
+        return 1;
+    }
+    meu_usuario[strcspn(meu_usuario, "\n")] = 0;  // Remove quebra de linha
+    
+    // Valida nome
+    if (strlen(meu_usuario) == 0) {
+        fprintf(stderr, "Nome de usuário não pode ser vazio\n");
         return 1;
     }
     
-    // Verificar se é o primeiro processo
-    struct stat shm_stat;
-    fstat(shm_fd, &shm_stat);
-    if (shm_stat.st_size == 0) {
-        is_first = 1;
-        if (ftruncate(shm_fd, sizeof(ChatRoom)) == -1) {
-            perror("ftruncate");
-            close(shm_fd);
-            return 1;
-        }
-    }
+    // INICIALIZAÇÃO
+    inicializar_chat();
     
-    // Mapear memória
-    chat_room = mmap(NULL, sizeof(ChatRoom), PROT_READ | PROT_WRITE, 
-                     MAP_SHARED, shm_fd, 0);
-    if (chat_room == MAP_FAILED) {
-        perror("mmap");
-        close(shm_fd);
+    // Sincroniza posição inicial (não exibe mensagens antigas)
+    sem_wait(sem);
+    ultima_msg_lida = chat_mem->total_msgs;
+    sem_post(sem);
+    
+    printf("\n✓ Chat iniciado como '%s'\n", meu_usuario);
+    printf("✓ Digite suas mensagens (ou 'sair' para encerrar)\n\n");
+    
+    // CRIA THREAD PARA MONITORAR MENSAGENS
+    if (pthread_create(&thread_monitor, NULL, monitorar_mensagens, NULL) != 0) {
+        perror("Erro ao criar thread");
+        limpar_chat();
         return 1;
     }
     
-    // Abrir/criar semáforos
-    sem_mutex = sem_open(SEM_MUTEX, O_CREAT, 0666, 1);
-    if (sem_mutex == SEM_FAILED) {
-        perror("sem_open mutex");
-        cleanup();
-        return 1;
-    }
-    
-    sem_msg = sem_open(SEM_MSG, O_CREAT, 0666, 0);
-    if (sem_msg == SEM_FAILED) {
-        perror("sem_open msg");
-        cleanup();
-        return 1;
-    }
-    
-    // Inicializar estrutura se for o primeiro
-    if (is_first) {
-        sem_wait(sem_mutex);
-        memset(chat_room, 0, sizeof(ChatRoom));
-        chat_room->msg_count = 0;
-        chat_room->user_count = 0;
-        sem_post(sem_mutex);
-        printf("Sala de chat criada!\n");
-    }
-    
-    // Adicionar usuário
-    my_user_index = add_user(my_username);
-    if (my_user_index == -1) {
-        fprintf(stderr, "Sala de chat cheia!\n");
-        cleanup();
-        return 1;
-    }
-    
-    printf("\n=== Bem-vindo ao Chat, %s! ===\n", my_username);
-    printf("Comandos:\n");
-    printf("  /users - Lista usuários online\n");
-    printf("  /quit  - Sair do chat\n");
-    printf("  /clear - Limpar tela\n");
-    printf("=============================\n\n");
-    
-    // Exibir mensagens existentes
-    display_messages(0);
-    
-    // Criar thread para escutar mensagens
-    if (pthread_create(&listener_thread, NULL, message_listener, NULL) != 0) {
-        perror("pthread_create");
-        cleanup();
-        return 1;
-    }
-    
-    // Loop principal
-    while (running) {
-        printf("[Você (%s)]: ", my_username);
+    // LOOP PRINCIPAL - Lê e envia mensagens do usuário
+    while (1) {
+        printf("> ");
         fflush(stdout);
         
-        if (fgets(input, MAX_MSG_LEN, stdin) == NULL) {
+        // Lê linha do usuário
+        if (fgets(buffer, MAX_MSG_LEN, stdin) == NULL) {
             break;
         }
         
-        input[strcspn(input, "\n")] = 0;
+        // Remove quebra de linha
+        buffer[strcspn(buffer, "\n")] = 0;
         
-        if (strlen(input) == 0) {
-            continue;
+        // Verifica comando de saída
+        if (strcmp(buffer, "sair") == 0) {
+            break;
         }
         
-        // Processar comandos
-        if (strcmp(input, "/quit") == 0) {
-            running = 0;
-            break;
-        } else if (strcmp(input, "/users") == 0) {
-            list_users();
-        } else if (strcmp(input, "/clear") == 0) {
-            system("clear || cls");
-        } else {
-            send_message(input);
+        // Envia mensagem se não estiver vazia
+        if (strlen(buffer) > 0) {
+            enviar_mensagem(buffer);
         }
     }
     
-    // Aguardar thread
-    pthread_join(listener_thread, NULL);
+    // ENCERRAMENTO
+    printf("\nEncerrando chat...\n");
+    rodando = 0;                        // Sinaliza thread para parar
+    pthread_join(thread_monitor, NULL);  // Aguarda thread terminar
+    limpar_chat();                       // Libera recursos
     
-    // Limpar
-    remove_user();
-    cleanup();
-    
-    printf("Até logo!\n");
+    printf("✓ Chat encerrado!\n");
     
     return 0;
 }
