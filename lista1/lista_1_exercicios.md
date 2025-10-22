@@ -39,3 +39,196 @@ A memória virtual é um mecanismo que desacopla o espaço de endereçamento ló
 A estrutura de micronúcleo organiza o sistema operacional de forma a minimizar a quantidade de código que executa em modo supervisor (núcleo). A ideia principal é mover a maior parte dos serviços tradicionalmente encontrados no núcleo, como sistemas de arquivos, drivers de dispositivos e gerenciadores de rede, para o espaço do usuário, onde eles executam como processos servidores.
 
 Dessa forma, o núcleo se torna mínimo, sendo responsável apenas pelas funções mais essenciais, como a comunicação entre processos (IPC), o escalonamento básico de threads e o gerenciamento de baixo nível da memória. Essa abordagem aumenta a robustez e a segurança do sistema, pois uma falha em um serviço (como um driver) executando em modo usuário não compromete todo o sistema operacional, como ocorreria em uma arquitetura monolítica.
+
+#### 7) 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+
+#define NUM_FILHOS 5
+
+typedef struct  {
+    pid_t pid;
+    int numero;
+} DadosFilho;
+
+int main() {
+    int fd[2]; 
+    pid_t pids[NUM_FILHOS];
+
+
+    if (pipe(fd) == -1) {
+        perror("pipe falhou");
+        exit(1);
+    }
+
+
+    for (int i = 0; i < NUM_FILHOS; i++) {
+        pids[i] = fork();
+
+        if (pids[i] < 0) {
+            perror("fork falhou");
+            exit(1);
+        }
+
+        if (pids[i] == 0) {
+            close(fd[0]);
+
+            srand(time(NULL) ^ getpid());
+
+            int numero_sorteado = rand() % 201;
+
+            DadosFilho dados;
+            dados.pid = getpid();
+            dados.numero = numero_sorteado;
+
+            printf("Filho (PID %d) enviou o número %d.\n", dados.pid, dados.numero);
+
+            write(fd[1], &dados, sizeof(DadosFilho));
+
+            close(fd[1]);
+
+            exit(0);
+        }
+    }
+
+    close(fd[1]);
+
+    int menor_numero = 201; 
+    pid_t pid_filho_menor = -1;
+
+    printf("\nPai (PID %d) esperando para receber os números...\n", getpid());
+
+    for (int i = 0; i < NUM_FILHOS; i++) {
+        DadosFilho dados_recebidos;
+
+        read(fd[0], &dados_recebidos, sizeof(DadosFilho));
+
+        printf("Pai recebeu %d do filho (PID %d).\n", dados_recebidos.numero, dados_recebidos.pid);
+
+        if (dados_recebidos.numero < menor_numero) {
+            menor_numero = dados_recebidos.numero;
+            pid_filho_menor = dados_recebidos.pid;
+        }
+    }
+
+    close(fd[0]);
+
+    for (int i = 0; i < NUM_FILHOS; i++) {
+        wait(NULL);
+    }
+
+    printf("\n--- Resultado Final ---\n");
+    printf("O menor número recebido foi: %d\n", menor_numero);
+    printf("Enviado pelo filho com PID: %d\n", pid_filho_menor);
+
+    return 0;
+}
+```
+
+#### 8)
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <signal.h>
+
+void filho_executa() {
+    int contador = 0;
+
+    while (1)
+    {
+        printf("Contador: %d\n", contador);
+        contador++;
+        sleep(1);
+    }
+}
+
+int main() {
+    pid_t filhos[3];
+    for (int i = 0; i < 3; i++) {
+        filhos[i] = fork();
+
+        if (filhos[i] == 0) {
+            printf("Filho %d criado com sucesso!. Meu PID: %d\n", i, getpid());
+            filho_executa();
+            exit(0);
+        } else if (filhos[i] < 0) {
+            perror("Erro ao criar o filho!\n");
+            exit(1);
+        }
+    }
+
+    printf("Filhos criados com sucesso.\n");
+    sleep(1);
+
+    for (int i = 0; i < 3; i++) {
+        kill(filhos[i], SIGSTOP);
+    }
+
+    printf("Filhos foram parados.\n");
+
+
+    for (int i = 0; i < 3; i++) {
+        printf("Filho %d:\n", filhos[i]);
+        kill(filhos[i], SIGCONT);
+        sleep(10);
+        kill(filhos[i], SIGSTOP);
+    }
+
+    for (int i = 0; i < 3; i++) {
+        kill(filhos[i], SIGKILL);
+    }
+
+    return 0;
+}
+```
+
+#### 9) 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+
+int main()
+{
+    pid_t filhos[10];
+    srand(time(NULL));
+
+    for (int i = 0; i < 10; i++)
+    {
+        int numero_aleatorio = rand() % 10;
+        char buffer[12];
+        snprintf(buffer, sizeof(buffer), "%d\n", numero_aleatorio);
+        setenv("num", buffer, 1);
+        filhos[i] = fork();
+
+        if (filhos[i] == 0)
+        {
+            char *mensagem = getenv("num");
+            printf("Sou o filho com PID: %d. Minha variável de ambiente tem o seguinte número: %s", getpid(), mensagem);
+            exit(0);
+        }
+        else if (filhos[i] < 0)
+        {
+            perror("Erro ao criar os filhos!");
+            exit(1);
+        }
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        wait(NULL);
+    }
+    
+    return 0;
+}
+```
