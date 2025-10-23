@@ -94,3 +94,372 @@ A principal vantagem de dar alta prioridade a esses processos é a melhora da re
 1.  **Melhor Responsividade:** Processos interativos (como editores de texto, navegadores web) são tipicamente limitados por E/S, pois passam a maior parte do tempo esperando por uma entrada do usuário (teclado, mouse). Ao dar-lhes alta prioridade, o sistema garante que eles sejam executados imediatamente assim que recebem uma entrada, proporcionando uma experiência de usuário fluida e sem atrasos perceptíveis.
 
 2.  **Maior Utilização dos Recursos:** Um processo limitado por E/S precisa de um curto surto de CPU para processar dados e rapidamente iniciar a próxima operação de E/S. Ao escaloná-lo rapidamente, o sistema permite que ele mantenha os dispositivos de E/S (que são lentos) ocupados. Enquanto o dispositivo de E/S está trabalhando, a CPU pode ser alocada a outros processos (como os *CPU-bound*), maximizando o paralelismo entre a CPU e os dispositivos de E/S e, consequentemente, a vazão (*throughput*) do sistema.
+
+#### 5)
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+
+int contador = 0;
+
+// Variáveis para a Solução de Peterson
+int flag[2] = {0, 0};
+int turn = 0;
+
+void *thread_sem_controle(void *arg)
+{
+    int id = *(int *)arg;
+
+    for (int i = 0; i < 5; i++)
+    {
+        // SEÇÃO CRÍTICA
+        int valor_local = contador;
+        printf("Thread %d: leu contador = %d\n", id, valor_local);
+
+        sched_yield();
+
+        contador = valor_local + 1;
+        printf("Thread %d: incrementou contador para %d\n", id, contador);
+        // FIM DA SEÇÃO CRÍTICA
+
+        sleep(1);
+    }
+
+    return NULL;
+}
+
+void *thread_peterson(void *arg)
+{
+    int id = *(int *)arg;
+    int outro = 1 - id;
+
+    for (int i = 0; i < 5; i++)
+    {
+        // ENTRADA NA SEÇÃO CRÍTICA
+        flag[id] = 1;
+        turn = outro;
+
+        while (flag[outro] == 1 && turn == outro)
+        {
+            // Espera ocupada
+        }
+
+        // SEÇÃO CRÍTICA
+        int valor_local = contador;
+        printf("Thread %d: leu contador = %d\n", id, valor_local);
+
+        sched_yield();
+
+        contador = valor_local + 1;
+        printf("Thread %d: incrementou contador para %d\n", id, contador);
+        // FIM DA SEÇÃO CRÍTICA
+
+        flag[id] = 0;
+
+        sleep(1);
+    }
+
+    return NULL;
+}
+
+int main()
+{
+    pthread_t threads[2];
+    int ids[2] = {0, 1};
+
+    printf("==============================================\n");
+    printf("VERSÃO 1: SEM CONTROLE DE CONCORRÊNCIA\n");
+    printf("==============================================\n");
+
+    contador = 0;
+
+    // Cria as threads sem controle
+    for (int i = 0; i < 2; i++)
+    {
+        pthread_create(&threads[i], NULL, thread_sem_controle, &ids[i]);
+    }
+
+    // Aguarda finalização
+    for (int i = 0; i < 2; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    printf("\n>>> Valor final do contador (SEM controle): %d\n", contador);
+    printf(">>> Valor esperado: 10\n\n");
+
+    sleep(2);
+
+    printf("==============================================\n");
+    printf("VERSÃO 2: COM SOLUÇÃO DE PETERSON\n");
+    printf("==============================================\n");
+
+    // Reset das variáveis
+    contador = 0;
+    flag[0] = 0;
+    flag[1] = 0;
+    turn = 0;
+
+    // Cria as threads com Peterson
+    for (int i = 0; i < 2; i++)
+    {
+        pthread_create(&threads[i], NULL, thread_peterson, &ids[i]);
+    }
+
+    // Aguarda finalização
+    for (int i = 0; i < 2; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    printf("\n>>> Valor final do contador (COM Peterson): %d\n", contador);
+    printf(">>> Valor esperado: 10\n\n");
+
+    return 0;
+}
+```
+
+#### 6)
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <dirent.h>
+
+#define MAX_CMD_LEN 1024
+#define MAX_ARGS 64
+
+
+
+void list_dir() {
+    DIR *d;
+    struct dirent *dir;
+    d = opendir(".");
+
+    if (d) {
+        while ((dir = readdir(d)) != NULL) {
+            // Não exibe os diretórios "." e ".."
+            if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
+                printf("%s\n", dir->d_name);
+            }
+        }
+        closedir(d); // Fecha o diretório
+    } else {
+        perror("Erro ao abrir diretório");
+    }
+}
+
+int main() {
+    char cmd[MAX_CMD_LEN]; 
+    char *args[MAX_ARGS]; 
+    pid_t pid;
+
+    while (1) {
+        printf("mini-shell> ");
+        fflush(stdout);
+
+        
+        if (fgets(cmd, sizeof(cmd), stdin) == NULL) {
+            break;
+        }
+
+        cmd[strcspn(cmd, "\n")] = 0;
+
+        // Analisa a linha de comando para separar o comando e seus argumentos
+        char *token;
+        int i = 0;
+        token = strtok(cmd, " "); // Divide a string por espaços
+        while (token != NULL) {
+            args[i] = token;
+            i++;
+            token = strtok(NULL, " ");
+        }
+        args[i] = NULL; // O último elemento do array de argumentos deve ser NULL para o execve
+
+        // Verifica se algum comando foi digitado
+        if (args[0] == NULL) {
+            continue; // Se o usuário apenas apertar Enter, volta ao início do loop
+        }
+
+        // Verificar se é um comando interno
+        if (strcmp(args[0], "exit") == 0) {
+            break; // Comando para sair do shell
+        }
+
+        if (strcmp(args[0], "ls") == 0) {
+            list_dir(); 
+            continue; 
+        }
+
+        // Cria um novo processo para executar o comando externo
+        pid = fork();
+
+        if (pid < 0) {
+            perror("Erro no fork");
+            exit(1);
+        } else if (pid == 0) {
+            if (execvp(args[0], args) < 0) {
+                perror("Comando não encontrado");
+                exit(1);
+            }
+        } else {
+            wait(NULL);
+        }
+    }
+
+    printf("\nSaindo do mini-shell.\n");
+    return 0;
+}
+```
+
+#### 7)
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <semaphore.h>
+#include <string.h>
+
+#define SEM_GARFO_NOME_BASE "/garfo_filosofo"
+
+void ciclo_do_filosofo(int id, int num_filosofos)
+{
+    // Identifica os garfos à esquerda e à direita do filósofo
+    int garfo_esquerda = id;
+    int garfo_direita = (id + 1) % num_filosofos;
+
+    // Gera os nomes dos semáforos para os garfos
+    char nome_sem_esquerda[50], nome_sem_direita[50];
+    sprintf(nome_sem_esquerda, "%s%d", SEM_GARFO_NOME_BASE, garfo_esquerda);
+    sprintf(nome_sem_direita, "%s%d", SEM_GARFO_NOME_BASE, garfo_direita);
+
+    // Abre os semáforos existentes (criados pelo processo pai)
+    sem_t *sem_garfo_esquerda = sem_open(nome_sem_esquerda, 0);
+    sem_t *sem_garfo_direita = sem_open(nome_sem_direita, 0);
+
+    if (sem_garfo_esquerda == SEM_FAILED || sem_garfo_direita == SEM_FAILED)
+    {
+        perror("Filósofo não conseguiu abrir os semáforos");
+        exit(1);
+    }
+
+    while (1)
+    {
+        // PENSAR
+        printf("Filósofo %d está PENSANDO.\n", id);
+        sleep(rand() % 3 + 1); // Pensa por um tempo aleatório
+
+        printf("Filósofo %d está com FOME e vai tentar pegar os garfos.\n", id);
+
+        // PEGAR GARFOS (Entrada na Seção Crítica)
+        // ESTRATÉGIA PARA EVITAR DEADLOCK:
+        // O último filósofo pega o garfo da direita primeiro, enquanto os outros
+        // pegam o da esquerda primeiro. Isso quebra a dependência circular.
+        if (id == num_filosofos - 1)
+        {
+            sem_wait(sem_garfo_direita);
+            printf("Filósofo %d pegou o garfo da DIREITA (%d).\n", id, garfo_direita);
+            sem_wait(sem_garfo_esquerda);
+            printf("Filósofo %d pegou o garfo da ESQUERDA (%d).\n", id, garfo_esquerda);
+        }
+        else
+        {
+            sem_wait(sem_garfo_esquerda);
+            printf("Filósofo %d pegou o garfo da ESQUERDA (%d).\n", id, garfo_esquerda);
+            sem_wait(sem_garfo_direita);
+            printf("Filósofo %d pegou o garfo da DIREITA (%d).\n", id, garfo_direita);
+        }
+
+        // COMER
+        printf(">>> Filósofo %d está COMENDO. <<<\n", id);
+        sleep(rand() % 3 + 1); // Come por um tempo aleatório
+
+        // DEVOLVER GARFOS (Saída da Seção Crítica)
+        printf("Filósofo %d TERMINOU de comer e vai devolver os garfos.\n", id);
+        sem_post(sem_garfo_esquerda); // Libera o garfo da esquerda
+        sem_post(sem_garfo_direita);  // Libera o garfo da direita
+    }
+
+    // Este código nunca será alcançado devido ao while(1),
+    sem_close(sem_garfo_esquerda);
+    sem_close(sem_garfo_direita);
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "Uso: %s <numero_de_filosofos>\n", argv[0]);
+        return 1;
+    }
+
+    int num_filosofos = atoi(argv[1]);
+
+    if (num_filosofos < 2)
+    {
+        fprintf(stderr, "O número de filósofos deve ser pelo menos 2.\n");
+        return 1;
+    }
+
+    // Criação e Inicialização dos Semáforos (Garfos)
+    // Cada garfo é um semáforo.
+    for (int i = 0; i < num_filosofos; i++)
+    {
+        char nome_sem[50];
+        sprintf(nome_sem, "%s%d", SEM_GARFO_NOME_BASE, i);
+
+        sem_t *sem = sem_open(nome_sem, O_CREAT, 0644, 1);
+        if (sem == SEM_FAILED)
+        {
+            perror("Erro ao criar semáforo no processo pai");
+            exit(1);
+        }
+        sem_close(sem);
+    }
+
+    // Criação dos Processos Filósofos
+    pid_t pids[num_filosofos];
+    for (int i = 0; i < num_filosofos; i++)
+    {
+        pids[i] = fork();
+
+        if (pids[i] < 0)
+        {
+            perror("Erro no fork");
+            exit(1);
+        }
+
+        if (pids[i] == 0)
+        {
+            ciclo_do_filosofo(i, num_filosofos);
+            exit(0);
+        }
+    }
+
+    printf("Pai esperando todos os filósofos terminarem (Ctrl+C para encerrar)\n");
+    for (int i = 0; i < num_filosofos; i++)
+    {
+        wait(NULL);
+    }
+
+    printf("Pai limpando os semáforos...\n");
+    for (int i = 0; i < num_filosofos; i++)
+    {
+        char nome_sem[50];
+        sprintf(nome_sem, "%s%d", SEM_GARFO_NOME_BASE, i);
+        if (sem_unlink(nome_sem) == -1)
+        {
+            perror("Erro ao desvincular semáforo");
+        }
+    }
+
+    printf("Programa finalizado.\n");
+    return 0;
+}
+```
