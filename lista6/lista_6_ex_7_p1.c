@@ -1,35 +1,33 @@
-// escritor.c
-#include <fcntl.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(void) {
-    const char *path = "ints.bin";
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        perror("open");
+int main()
+{
+    const char *nome_arquivo = "numeros.bin";
+
+    FILE *arquivo = fopen(nome_arquivo, "wb");
+
+    if (arquivo == NULL)
+    {
+        perror("Erro ao abrir o arquivo para escrita");
         return 1;
     }
 
-    int arr[30];
-    for (int i = 0; i < 30; ++i) {
-        arr[i] = i + 1; // 1..30
+    printf("Arquivo '%s' aberto para escrita.\n", nome_arquivo);
+
+    for (int i = 1; i <= 30; i++)
+    {
+        if (fwrite(&i, sizeof(int), 1, arquivo) != 1)
+        {
+            fprintf(stderr, "Erro ao escrever o número %d no arquivo.\n", i);
+            fclose(arquivo);
+            return 1;
+        }
     }
 
-    size_t total = sizeof(arr);
-    ssize_t written = write(fd, arr, total);
-    if (written < 0) {
-        perror("write");
-        close(fd);
-        return 1;
-    }
-    if ((size_t)written != total) {
-        fprintf(stderr, "Escrita parcial: esperado %zu, escreveu %zd\n", total, written);
-        close(fd);
-        return 1;
-    }
+    printf("30 números inteiros foram escritos com sucesso no arquivo '%s'.\n", nome_arquivo);
 
-    close(fd);
+    fclose(arquivo);
+
     return 0;
 }

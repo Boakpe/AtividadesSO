@@ -1,52 +1,52 @@
-// leitor.c
-#include <sys/uio.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/uio.h>  
+#include <fcntl.h>    
+#include <unistd.h>   
 
-int main(void) {
-    const char *path = "ints.bin";
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        perror("open");
+int main() {
+    const char *nome_arquivo = "numeros.bin";
+
+    int fd = open(nome_arquivo, O_RDONLY);
+
+    if (fd == -1) {
+        perror("Erro ao abrir o arquivo para leitura");
         return 1;
     }
-
-    // Pular os 9 primeiros ints para começar no 10º (offset = 9 * sizeof(int))
-    off_t offset = (off_t)(9 * (off_t)sizeof(int));
-    if (lseek(fd, offset, SEEK_SET) == (off_t)-1) {
-        perror("lseek");
+    
+    off_t offset = 9 * sizeof(int);
+    if (lseek(fd, offset, SEEK_SET) == -1) {
+        perror("Erro ao posicionar o cursor no arquivo");
         close(fd);
         return 1;
     }
 
-    // 8 buffers (um int em cada)
-    int bufs[8] = {0};
+    int numeros_lidos[8];
+
     struct iovec iov[8];
-    for (int i = 0; i < 8; ++i) {
-        iov[i].iov_base = &bufs[i];
-        iov[i].iov_len  = sizeof(int);
+
+    for (int i = 0; i < 8; i++) {
+        iov[i].iov_base = &numeros_lidos[i]; 
+        iov[i].iov_len = sizeof(int);        
     }
 
-    ssize_t expected = 8 * (ssize_t)sizeof(int);
-    ssize_t nread = readv(fd, iov, 8); // apenas uma chamada a readv
-    if (nread < 0) {
-        perror("readv");
-        close(fd);
-        return 1;
-    }
-    if (nread != expected) {
-        fprintf(stderr, "Leitura incompleta: esperado %zd bytes, leu %zd bytes\n", expected, nread);
+    ssize_t bytes_lidos = readv(fd, iov, 8);
+
+    if (bytes_lidos == -1) {
+        perror("Erro ao ler o arquivo com readv");
         close(fd);
         return 1;
     }
 
-    // Imprimir: buffer 1 = 10º, buffer 2 = 11º, ..., buffer 8 = 17º
-    for (int i = 0; i < 8; ++i) {
-        printf("Buffer %d: %d\n", i + 1, bufs[i]);
+    printf("Leitura realizada com sucesso a partir do 10º inteiro.\n");
+    printf("Total de bytes lidos: %ld\n", bytes_lidos);
+    printf("Números lidos do arquivo:\n");
+
+    for (int i = 0; i < 8; i++) {
+        printf("Buffer %d: %d\n", i + 1, numeros_lidos[i]);
     }
 
     close(fd);
+
     return 0;
 }
