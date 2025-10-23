@@ -1,14 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <semaphore.h>
-#include <string.h>
+#include <unistd.h>    // Para fork(), sleep()
+#include <sys/wait.h>  // Para wait()
+#include <fcntl.h>     // Para O_CREAT
+#include <sys/stat.h>  // Para modos de permissão
+#include <semaphore.h> // Para semáforos POSIX
+#include <string.h>    // Para sprintf()
 
+// Define um nome base para os semáforos dos garfos.
+// O número do garfo será anexado a este nome.
 #define SEM_GARFO_NOME_BASE "/garfo_filosofo"
 
+// Função que representa o ciclo de vida de um filósofo
+// Lógica de execução de cada filósofo
 void ciclo_do_filosofo(int id, int num_filosofos)
 {
     // Identifica os garfos à esquerda e à direita do filósofo
@@ -27,9 +31,10 @@ void ciclo_do_filosofo(int id, int num_filosofos)
     if (sem_garfo_esquerda == SEM_FAILED || sem_garfo_direita == SEM_FAILED)
     {
         perror("Filósofo não conseguiu abrir os semáforos");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
+    // Loop infinito de pensar e comer
     while (1)
     {
         // PENSAR
@@ -44,16 +49,16 @@ void ciclo_do_filosofo(int id, int num_filosofos)
         // pegam o da esquerda primeiro. Isso quebra a dependência circular.
         if (id == num_filosofos - 1)
         {
-            sem_wait(sem_garfo_direita);
+            sem_wait(sem_garfo_direita); // Pega garfo da direita
             printf("Filósofo %d pegou o garfo da DIREITA (%d).\n", id, garfo_direita);
-            sem_wait(sem_garfo_esquerda);
+            sem_wait(sem_garfo_esquerda); // Pega garfo da esquerda
             printf("Filósofo %d pegou o garfo da ESQUERDA (%d).\n", id, garfo_esquerda);
         }
         else
         {
-            sem_wait(sem_garfo_esquerda);
+            sem_wait(sem_garfo_esquerda); // Pega garfo da esquerda
             printf("Filósofo %d pegou o garfo da ESQUERDA (%d).\n", id, garfo_esquerda);
-            sem_wait(sem_garfo_direita);
+            sem_wait(sem_garfo_direita); // Pega garfo da direita
             printf("Filósofo %d pegou o garfo da DIREITA (%d).\n", id, garfo_direita);
         }
 
@@ -68,12 +73,14 @@ void ciclo_do_filosofo(int id, int num_filosofos)
     }
 
     // Este código nunca será alcançado devido ao while(1),
+    // mas é uma boa prática fechar os semáforos.
     sem_close(sem_garfo_esquerda);
     sem_close(sem_garfo_direita);
 }
 
 int main(int argc, char *argv[])
 {
+    // 1. Validação dos Argumentos de Entrada
     if (argc != 2)
     {
         fprintf(stderr, "Uso: %s <numero_de_filosofos>\n", argv[0]);
@@ -88,23 +95,28 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Criação e Inicialização dos Semáforos (Garfos)
+    // 2. Criação e Inicialização dos Semáforos (Garfos)
     // Cada garfo é um semáforo.
     for (int i = 0; i < num_filosofos; i++)
     {
         char nome_sem[50];
         sprintf(nome_sem, "%s%d", SEM_GARFO_NOME_BASE, i);
 
+        // O_CREAT: cria o semáforo se ele não existir.
+        // 0644: permissões de arquivo (leitura/escrita para o dono, leitura para outros).
+        // 1: valor inicial do semáforo (1 = garfo está disponível).
         sem_t *sem = sem_open(nome_sem, O_CREAT, 0644, 1);
         if (sem == SEM_FAILED)
         {
             perror("Erro ao criar semáforo no processo pai");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
+        // O semáforo foi criado no sistema, podemos fechá-lo neste processo.
+        // Os processos filhos irão abri-lo pelo nome.
         sem_close(sem);
     }
 
-    // Criação dos Processos Filósofos
+    // 3. Criação dos Processos Filósofos
     pid_t pids[num_filosofos];
     for (int i = 0; i < num_filosofos; i++)
     {
@@ -113,22 +125,27 @@ int main(int argc, char *argv[])
         if (pids[i] < 0)
         {
             perror("Erro no fork");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 
         if (pids[i] == 0)
         {
+            // Este é o processo filho (um filósofo)
             ciclo_do_filosofo(i, num_filosofos);
-            exit(0);
+            exit(0); // O filho termina sua execução aqui
         }
     }
 
-    printf("Pai esperando todos os filósofos terminarem (Ctrl+C para encerrar)\n");
+    // 4. Processo Pai Espera por Todos os Filhos
+    // O pai só continua após todos os filhos terminarem.
+    printf("Pai esperando todos os filósofos terminarem (pressione Ctrl+C para encerrar)...\n");
     for (int i = 0; i < num_filosofos; i++)
     {
         wait(NULL);
     }
 
+    // 5. Limpeza dos Semáforos
+    // Após todos os processos terminarem, o pai remove os semáforos do sistema.
     printf("Pai limpando os semáforos...\n");
     for (int i = 0; i < num_filosofos; i++)
     {
