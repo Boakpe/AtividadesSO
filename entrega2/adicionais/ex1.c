@@ -9,9 +9,9 @@
 #include <limits.h>
 
 /* Tamanhos de buffer para leitura do inotify */
-#define EVENT_SIZE  (sizeof(struct inotify_event))
-#define BUF_LEN     (1024 * (EVENT_SIZE + 16))
 #define NAME_MAX 255
+#define EVENT_SIZE  (sizeof(struct inotify_event))
+#define BUF_LEN     (1024 * (EVENT_SIZE + NAME_MAX + 1))
 
 /* Estrutura para representar uma tarefa na fila */
 typedef struct Task {
@@ -30,7 +30,7 @@ Task *queue_tail = NULL;
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  queue_cond  = PTHREAD_COND_INITIALIZER;
 
-/* --- Funções da Fila (Thread-Safe logic é feita no caller) --- */
+/* --- Funções da Fila --- */
 
 void enqueue(int type, const char *name) {
     Task *new_task = (Task *)malloc(sizeof(Task));
@@ -58,8 +58,6 @@ Task *dequeue() {
 }
 
 /* --- Função Auxiliar para executar comandos de sistema --- */
-/* Nota: Em um sistema de produção real, usaríamos open/read/write/unlink 
-   do C, mas para fins didáticos, system() com cp/rm é mais legível */
 void sync_action(int type, const char *filename) {
     char cmd[4096];
     char src_path[2048];
@@ -96,7 +94,7 @@ void sync_action(int type, const char *filename) {
     }
 }
 
-/* --- Thread Consumidora (Worker) --- */
+/* --- Thread Consumidora --- */
 void *worker_thread(void *arg) {
     while (1) {
         Task *task = NULL;
@@ -126,7 +124,7 @@ void *worker_thread(void *arg) {
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Uso: %s <diretorio_origem> <diretorio_destino>\n", argv[0]);
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     SRC_DIR = argv[1];
@@ -139,7 +137,7 @@ int main(int argc, char **argv) {
     fd = inotify_init();
     if (fd < 0) {
         perror("inotify_init");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     // 2. Adiciona Monitoramento
@@ -150,7 +148,7 @@ int main(int argc, char **argv) {
     if (wd < 0) {
         perror("inotify_add_watch");
         printf("Certifique-se que o diretorio '%s' existe.\n", SRC_DIR);
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     printf("Monitorando '%s' -> Espelhando em '%s'\n", SRC_DIR, DST_DIR);
@@ -159,7 +157,7 @@ int main(int argc, char **argv) {
     pthread_t tid;
     if (pthread_create(&tid, NULL, worker_thread, NULL) != 0) {
         perror("pthread_create");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     // 4. Loop Principal (Produtor)
