@@ -1,4 +1,3 @@
-/* common.h */
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -16,13 +15,14 @@
 #define SHM_NAME "/exemplo_shm"
 #define SEM_MUTEX "/sem_mutex"
 #define SEM_EMPTY "/sem_empty"
-#define SEM_FULL  "/sem_full"
+#define SEM_FULL "/sem_full"
 
 // Tamanho do buffer (quantos números cabem na memória)
 #define BUFFER_SIZE 5
 
 // Estrutura da memória compartilhada
-typedef struct {
+typedef struct
+{
     int buffer[BUFFER_SIZE];
     int in;  // Índice de inserção
     int out; // Índice de remoção
