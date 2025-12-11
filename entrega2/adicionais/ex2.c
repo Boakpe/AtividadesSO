@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
     // Verifica se o diretório foi passado
     if (argc < 2) {
         fprintf(stderr, "Uso: %s <caminho_do_diretorio>\n", argv[0]);
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     const char *dir_path = argv[1];
@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
     dp = opendir(dir_path);
     if (dp == NULL) {
         perror("Erro ao abrir diretorio");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
 
     printf("Lendo propriedades do diretório: %s\n\n", dir_path);
